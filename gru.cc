@@ -1,5 +1,6 @@
 // Copyright (c) 2020 smarsufan. All Rights Reserved.
 
+#include <iostream>
 #include <vector>
 #include <cmath>
 
@@ -7,6 +8,7 @@ template <typename T>
 void tanh(T *y, T *x, int size) {
   for (int idx = 0; idx < size; ++idx) {
     y[idx] = tanhf(x[idx]);
+    // y[idx] = (expf(x[idx] - expf(-x[idx]))) / (expf(x[idx] + expf(-x[idx])));
   }
 }
 
@@ -21,9 +23,9 @@ template <typename T>
 void matmul(T *C, T *A, T *B, T *bias, int m, int n, int k) {
   for (int i = 0; i < m; ++i) {
     for (int j = 0; j < n; ++j) {
-      T sum = 0;
+      T sum = 0.;
       for (int c = 0; c < k; ++c) {
-        sum += A[i * k + c] * B[n * k + c];
+        sum += A[i * k + c] * B[j * k + c];
       }
       C[i * n + j] = sum + bias[j];
     }
@@ -61,14 +63,31 @@ void gru_cell(T *outputs, T *inputs, T *state, T *gate_kernel, T *gate_bias, T *
   /// 1. Concat input and state in dim 1.
   std::vector<T> concat_inputs(batch_size * (input_size + hidden_size));
   concate(concat_inputs.data(), inputs, state, batch_size, input_size, hidden_size);
+  fprintf(stderr, "concat_inputs\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", concat_inputs[idx]);
+  }
 
   /// 2. Compute gate_inputs
   std::vector<T> gate_inputs(batch_size * (hidden_size * 2));
   matmul(gate_inputs.data(), concat_inputs.data(), gate_kernel, gate_bias, batch_size, hidden_size * 2, hidden_size + input_size);
+  fprintf(stderr, "gate_inputs\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", gate_inputs[idx]);
+  }
+
+  fprintf(stderr, "\ngate_kernel\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", gate_kernel[idx]);
+  }
 
   /// 3. Compute sigmoid value
   std::vector<T> value(batch_size * (hidden_size * 2));
   sigmoid(value.data(), gate_inputs.data(), gate_inputs.size());
+  fprintf(stderr, "value\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", value[idx]);
+  }
 
   /// 4. Split value to r, u  
   std::vector<T> r(batch_size * hidden_size);
@@ -80,6 +99,15 @@ void gru_cell(T *outputs, T *inputs, T *state, T *gate_kernel, T *gate_bias, T *
     memcpy(u.data() + i * hidden_size, value_p, sizeof(T) * hidden_size);
     value_p += hidden_size;
   }
+  fprintf(stderr, "r\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", r[idx]);
+  }
+
+  fprintf(stderr, "u\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", u[idx]);
+  }
 
   std::vector<T> r_state(batch_size * hidden_size);
   for (int i = 0; i < r_state.size(); ++i) {
@@ -89,17 +117,35 @@ void gru_cell(T *outputs, T *inputs, T *state, T *gate_kernel, T *gate_bias, T *
   /// 5. Concat inputs and r_state to candidate_inputs
   std::vector<T> candidate_inputs(batch_size * (input_size + hidden_size));
   concate(candidate_inputs.data(), inputs, r_state.data(), batch_size, input_size, hidden_size);
+  fprintf(stderr, "candidate_inputs\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", candidate_inputs[idx]);
+  }
 
   /// 6. Compute candidate
   std::vector<T> candidate(batch_size * hidden_size);
   matmul(candidate.data(), candidate_inputs.data(), candidate_kernel, candidate_bias, batch_size, hidden_size, input_size + hidden_size);
+  fprintf(stderr, "candidate\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", candidate[idx]);
+  }
 
   /// 7. tanh actv
   std::vector<T> c(batch_size * hidden_size);
   tanh(c.data(), candidate.data(), c.size());
+  fprintf(stderr, "c\n");
+  for (int idx = 0; idx < 10; ++idx) {
+    fprintf(stderr, "%f\n", c[idx]);
+  }
 
   /// 8. Compute result
   for (int idx = 0; idx < batch_size * hidden_size; ++idx) {
-    outputs[idx] = u[idx] * state[idx] + (1 - u[idx]) * c[idx];
+    outputs[idx] = u[idx] * state[idx] + (1. - u[idx]) * c[idx];
   }
+}
+
+extern "C"
+void gru_cell_fp32(float *outputs, float *inputs, float *state, float *gate_kernel, float *gate_bias, float *candidate_kernel, float *candidate_bias, int batch_size, int input_size, int hidden_size) {
+  fprintf(stderr, "%d %d %d\n", batch_size, input_size, hidden_size);
+  gru_cell(outputs, inputs, state, gate_kernel, gate_bias, candidate_kernel, candidate_bias, batch_size, input_size, hidden_size);
 }
